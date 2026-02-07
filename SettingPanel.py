@@ -393,14 +393,19 @@ class SettingsDialog(QDialog):
             pass
 
     # —— 代码规格化 —— #
-    _re_full = re.compile(r'^(sh|sz|bj)\d+$')
+    _re_full = re.compile(r'^(sh|sz|bj|hk)\d+$')
     _re_6 = re.compile(r'^\d{6}$')
+    _re_hk = re.compile(r'^\d{5}$')
 
     def _normalize_code_or_none(self, s: str):
         s = (s or "").strip().lower()
         s = re.sub(r'[^a-z0-9]', '', s)
         if not s: return None
         if self._re_full.match(s): return s
+        # 港股代码：5位数字，自动添加 hk 前缀
+        if self._re_hk.match(s):
+            return 'hk' + s
+        # 6位数字：沪深京
         if self._re_6.match(s):
             if s[0] == '6' or s[0:2] == '90' or s[0] == '5':
                 return 'sh' + s

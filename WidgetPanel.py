@@ -346,28 +346,67 @@ class FloatLabel(QWidget):
                 continue
             heads = line.split('="')[0].split('_')
             parts = line.split('="')[1].split(',')
-            if len(parts) < 30:
-                continue
 
-            code          = heads[2]
-            name          = parts[0]
-            opening_price = float(parts[1] or 0)   # 开盘
-            prev_close    = float(parts[2] or 0)   # 昨收
-            current_price = float(parts[3] or 0)   # 现价
-            high_price    = float(parts[4] or 0)   # 当日最高
-            low_price     = float(parts[5] or 0)   # 当日最低
-            first_pur     = float(parts[6] or 0)   # 买一
-            first_sell    = float(parts[7] or 0)   # 卖一
-            deals_vol     = float(parts[8] or 0)   # 成交量
-            deals_amt     = float(parts[9] or 0)   # 成交额
-            purchaser     = [int(x or 0) for x in parts[10:19:2]]  # 买盘，股数
-            pur_price     = [float(x or 0) for x in parts[11:20:2]]  # 买盘，价格
-            seller        = [int(x or 0) for x in parts[20:29:2]]  # 卖盘，股数
-            sel_price     = [float(x or 0) for x in parts[21:30:2]]  # 卖盘，价格
-            update_date   = [int(x or 0) for x in parts[30].split('-')]  # 日期
-            update_time   = [int(x or 0) for x in parts[31].split(':')]  # 时间
+            # 判断是否为港股
+            is_hk = len(heads) > 2 and heads[2].startswith('hk')
 
-            etf = code[2] in ('1','5')
+            if is_hk:
+                # 港股数据格式处理
+                # 港股返回字段较少，跳过字段数检查
+                if len(parts) < 3:
+                    continue
+
+                code = heads[2]
+                name = parts[1] if len(parts) > 1 else parts[0]
+                current_price = float(parts[6] or 0)   # 现价
+                prev_close = float(parts[3] or 0)     # 昨收
+                opening_price = float(parts[5] or 0)  # 开盘
+                high_price = float(parts[4] or 0)     # 当日最高
+                low_price = float(parts[7] or 0)      # 当日最低
+                # 港股其他字段可能不存在或格式不同
+                first_pur = 0
+                first_sell = 0
+                deals_vol = float(parts[12] or 0) if len(parts) > 12 else 0  # 成交量
+                deals_amt = 0  # 港股可能没有成交额
+
+                # 港股买一卖一数据在不同位置
+                if len(parts) > 9:
+                    first_pur = float(parts[9] or 0)   # 买一价
+                    first_sell = float(parts[10] or 0) # 卖一价
+
+                purchaser = [0] * 5
+                pur_price = [0.0] * 5
+                seller = [0] * 5
+                sel_price = [0.0] * 5
+                update_date = [0, 0, 0]
+                update_time = [0, 0, 0]
+
+                etf = False  # 港股暂不区分ETF
+
+            else:
+                # A股/北交所数据处理
+                if len(parts) < 30:
+                    continue
+
+                code          = heads[2]
+                name          = parts[0]
+                opening_price = float(parts[1] or 0)   # 开盘
+                prev_close    = float(parts[2] or 0)   # 昨收
+                current_price = float(parts[3] or 0)   # 现价
+                high_price    = float(parts[4] or 0)   # 当日最高
+                low_price     = float(parts[5] or 0)   # 当日最低
+                first_pur     = float(parts[6] or 0)   # 买一
+                first_sell    = float(parts[7] or 0)   # 卖一
+                deals_vol     = float(parts[8] or 0)   # 成交量
+                deals_amt     = float(parts[9] or 0)   # 成交额
+                purchaser     = [int(x or 0) for x in parts[10:19:2]]  # 买盘，股数
+                pur_price     = [float(x or 0) for x in parts[11:20:2]]  # 买盘，价格
+                seller        = [int(x or 0) for x in parts[20:29:2]]  # 卖盘，股数
+                sel_price     = [float(x or 0) for x in parts[21:30:2]]  # 卖盘，价格
+                update_date   = [int(x or 0) for x in parts[30].split('-')]  # 日期
+                update_time   = [int(x or 0) for x in parts[31].split(':')]  # 时间
+
+                etf = code[2] in ('1','5')
 
             # 构建买一/卖一数据及其颜色信息，并添加位置箭头
             b1_label = ""
@@ -377,6 +416,8 @@ class FloatLabel(QWidget):
 
             # 决定小数精度用于比较是否相等（避免浮点微小误差）
             dec = 3 if etf else 2
+            if is_hk:
+                dec = 2  # 港股通常2位小数
             def almost_eq(a, b):
                 try:
                     return round(float(a), dec) == round(float(b), dec)
@@ -477,7 +518,8 @@ class FloatLabel(QWidget):
             k_payload = {"k": (opening_price, current_price, high_price, low_price, prev_close)}
 
             # "代码", "名称", "现价", "涨跌值", "涨跌幅", "买一", "卖一", "委比", "成交量", "成交额", "均价",  "K线"
-            if code[2] not in ('1','5'):
+            # 判断显示格式：港股用2位小数，ETF用3位，普通A股用2位
+            if is_hk or code[2] not in ('1','5'):
                 price_data.append([
                     code[2:] if self.short_code else code,
                     name if self.name_length == 0 else name[:self.name_length],
@@ -486,10 +528,10 @@ class FloatLabel(QWidget):
                     f"{change_pct:+.2f}%",
                     b1_label,
                     s1_label,
-                    f"{committee:+.2f}%",
+                    f"{committee:+.2f}%" if not is_hk else "-",
                     f"{deals_vol}" if deals_vol<1e4 else (f"{deals_vol/1e4:.2f}万" if deals_vol<1e8 else f"{deals_vol/1e8:.2f}亿"),
-                    f"{deals_amt/1e4:.2f}万" if deals_amt<1e8 else (f"{deals_amt/1e8:.2f}亿" if deals_amt<1e12 else f"{deals_amt/1e12:.2f}万亿"),
-                    f"{avg:.2f}",
+                    f"{deals_amt/1e4:.2f}万" if deals_amt<1e8 else (f"{deals_amt/1e8:.2f}亿" if deals_amt<1e12 else f"{deals_amt/1e12:.2f}万亿") if not is_hk else "-",
+                    f"{avg:.2f}" if not is_hk else "-",
                     k_payload
                 ])
             else:
